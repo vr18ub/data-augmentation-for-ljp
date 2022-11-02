@@ -4,26 +4,26 @@ from typing import Optional
 from dataclasses import dataclass, field
 
 
-class ProblemType(str, ExplicitEnum):
+class ProblemType(ExplicitEnum):
     REGRESSION = "regression"
     SINGLE_LABEL_CLASSIFICATION = "single_label_classification"
     MULTI_LABEL_CLASSIFICATION = "multi_label_classification"
 
 
-class SegmentationType(str, ExplicitEnum):
+class SegmentationType(ExplicitEnum):
     SENTENCE = "sentence"
     PARAGRAPH = "paragraph"
     BLOCK = "block"
     OVERLAPPING = "overlapping"
 
 
-class DataAugmentationType(str, ExplicitEnum):
+class DataAugmentationType(ExplicitEnum):
     TRANSLATION = "translation"
     BACK_TRANSLATION = "back_translation"
     NO_AUGMENTATION = "no_augmentation"
 
 
-class DataGeneralizationType(str, ExplicitEnum):
+class DataGeneralizationType(ExplicitEnum):
     DATE_NORMALIZATION = "date_normalization"
     NO_GENERALIZATION = "no_generalization"
 
@@ -53,7 +53,7 @@ class SubDataset(ExplicitEnum):
                     raise ValueError(message)
 
 
-class LegalArea(str, SubDataset):
+class LegalArea(SubDataset):
     PUBLIC_LAW = "public_law"
     CIVIL_LAW = "civil_law"
     PENAL_LAW = "penal_law"
@@ -67,7 +67,7 @@ class LegalArea(str, SubDataset):
         return "legal_area"
 
 
-class OriginRegion(str, SubDataset):
+class OriginRegion(SubDataset):
     ZURICH = "Zürich"
     EASTERN_SWITZERLAND = "Eastern_Switzerland"
     CENTRAL_SWITZERLAND = "Central_Switzerland"
@@ -82,7 +82,7 @@ class OriginRegion(str, SubDataset):
         return "origin_region"
 
 
-class OriginCanton(str, SubDataset):
+class OriginCanton(SubDataset):
     ZURICH = "ZH"
     BERNE = "BE"
     LUCERNE = "LU"
@@ -116,7 +116,7 @@ class OriginCanton(str, SubDataset):
         return "origin_canton"
 
 
-class Jurisdiction(str, ExplicitEnum):
+class Jurisdiction(ExplicitEnum):
     SWITZERLAND = "switzerland"
     INDIA = "india"
     BOTH = "both"
@@ -181,6 +181,13 @@ class DataArguments:
                     "Padding to 'longest' may lead to problems in hierarchical and long bert."
         },
     )
+    path: str = field(
+        default=None,
+        metadata={
+            "help": "path from the DATA_DIR dir"
+        }
+    )
+    
     data_augmentation_type: DataAugmentationType = field(
         default=DataAugmentationType.NO_AUGMENTATION, metadata={"help": "What type of data augmentation to use"},
     )

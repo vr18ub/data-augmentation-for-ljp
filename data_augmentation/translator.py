@@ -33,19 +33,19 @@ model = EasyNMT('m2m_100_418M')  # RTX 3090 is not big enough for m2m_100_1.2B. 
 def translate_texts(source_lang, target_lang, texts):
     translated_texts_list = []
     for text in tqdm(texts):
-        translated = model.translate(text, source_lang=source_lang, target_lang=target_lang, batch_size=8)
+        translated = model.translate(text, source_lang=source_lang, target_lang=target_lang, batch_size=8, max_new_tokens=1300)
         translated_texts_list.append(translated)
     return translated_texts_list
 
 
 def translate(source_langs, target_lang, debug=False) -> None:
-    target_path = TRANSLATION_DIR / target_lang
+    target_path = Path(f"{DATA_DIR}/gpt3mix/AR_OG/augmentations_de/A2")
     target_path.mkdir(parents=True, exist_ok=True)
-    copyfile(f'{DATA_DIR}/{target_lang}/labels.json', f'{target_path}/labels.json')  # copy labels.json file
+    # copyfile(f'{DATA_DIR}/{source_langs[0]}/labels.json', f'{target_path}/labels.json')  # copy labels.json file
 
     for lang in source_langs:
-        file_path = f'{DATA_DIR}/{lang}/train.csv'
-        target_file_path = target_path / f'train_{lang}.csv'
+        file_path = f"{DATA_DIR}/gpt3mix/AR_OG/augmentations_en/A2/augmented_gpt3mix.csv"    # file_path = f'{DATA_DIR}/{lang}/train.csv'
+        target_file_path = f"{str(target_path)}/augmented_gpt3mix_de.csv"    #  target_file_path = target_path / f'train_{lang}.csv'
         if Path(target_file_path).exists():
             print(f"Already processed {target_file_path}. Skipping...")
             continue
@@ -93,8 +93,8 @@ def back_translate(source_lang, target_langs, debug=False) -> None:
 if __name__ == '__main__':
     debug = False
 
-    source_langs = ['de', 'fr', 'it']
-    target_lang = 'en'
+    source_langs = ['en']
+    target_lang = 'de'
     translate(source_langs, target_lang, debug=debug)
 
     source_lang = 'it'
@@ -109,4 +109,4 @@ if __name__ == '__main__':
                      'no', 'ns', 'oc', 'or', 'pa', 'pl', 'ps', 'pt', 'ro', 'ru', 'sd', 'si', 'sk', 'sl', 'so', 'sq',
                      'sr', 'ss', 'su', 'sv', 'sw', 'ta', 'th', 'tl', 'tn', 'tr', 'uk', 'ur', 'uz', 'vi', 'wo', 'xh',
                      'yi', 'yo', 'zh', 'zu', ]  # supported by m2m_100
-    back_translate(source_lang, target_langs_basic, debug=debug)
+    # back_translate(source_lang, target_langs_basic, debug=debug)

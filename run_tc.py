@@ -113,8 +113,8 @@ def main():
         model_args, data_args, training_args, adapter_args = parser.parse_args_into_dataclasses()
 
     # for better charts when we have a group run with multiple seeds
-    os.environ["WANDB_RUN_GROUP"] = training_args.run_name[:-2]  # remove last two characters "-{seed}"
-    os.environ['WANDB_PROJECT'] = f'SwissJudgmentPredictionCrossLingualTransfer'
+    os.environ["WANDB_RUN_GROUP"] = training_args.run_name[:-2] + "_aug"  # remove last two characters "-{seed}"
+    os.environ['WANDB_PROJECT'] = "SJP-GPT3Mix-AR_OG"
 
     # Detecting last checkpoint.
     last_checkpoint = None
@@ -122,12 +122,12 @@ def main():
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
         if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
             raise ValueError(
-                f"Output directory ({training_args.output_dir}) already exists and is not empty. "
+                "Output directory ("+training_args.output_dir+") already exists and is not empty."
                 "Use --overwrite_output_dir to overcome."
             )
         elif last_checkpoint is not None:
             logger.info(
-                f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
+                "Checkpoint detected, resuming training at "+last_checkpoint+". To avoid this behavior, change "
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
 
@@ -147,7 +147,7 @@ def main():
         "adapter_args": dataclasses.asdict(adapter_args, dict_factory=custom_asdict_factory),
     }
     Path(training_args.output_dir).mkdir(parents=True, exist_ok=True)
-    with open(f'{training_args.output_dir}/experiment_params.yaml', 'w') as file:
+    with open(training_args.output_dir+"/experiment_params.yaml", 'w') as file:
         yaml.safe_dump(experiment_params, file, default_flow_style=False)
 
     # Setup distant debugging if needed
@@ -168,10 +168,10 @@ def main():
     logger.setLevel(logging.INFO if is_main_process(training_args.local_rank) else logging.WARN)
 
     # Log on each process the small summary:
-    logger.warning(
+    """logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}, "
         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
-    )
+    )"""
 
     # Set the verbosity to info of the Transformers logger (on main process only):
     if is_main_process(training_args.local_rank):
@@ -179,7 +179,7 @@ def main():
         transformers.utils.logging.enable_default_handler()
         transformers.utils.logging.enable_explicit_format()
 
-    logger.info(f"Experiment parameters:")
+    logger.info("Experiment parameters:")
     pprint.pprint(experiment_params)
 
     # Set seed before initializing model.
@@ -225,16 +225,20 @@ def main():
     train_datasets, eval_datasets, = [], []
     if training_args.do_train:
         for lang in model_args.train_languages:
-            train_files = [(DATA_DIR / lang / 'train.csv').as_posix()]
+            if data_args.path is None:
+                path = 'gpt3mix/AR_OG/de_<600'
+            else:
+                path = data_args.path
+            train_files = [(DATA_DIR / path / 'train_augmented.csv').as_posix()]    #  train_files = [(DATA_DIR / lang / 'train.csv').as_posix()]
             if data_args.data_augmentation_type in [DataAugmentationType.TRANSLATION,
                                                     DataAugmentationType.BACK_TRANSLATION]:
                 path = AUGMENTED_DIR / data_args.data_augmentation_type / lang
                 if data_args.jurisdiction == Jurisdiction.INDIA:
                     path = path / Jurisdiction.INDIA.value  # only take the indian data
                     train_files = []  # remove the main train files
-                train_files.extend(glob.glob(f"{path}/*.csv"))  # add all files inside this path
-                if data_args.jurisdiction == Jurisdiction.BOTH:
-                    train_files.extend(glob.glob(f"{path / Jurisdiction.INDIA.value}/*.csv"))  # add the indian data
+                train_files.extend(glob.glob(path+"/*.csv"))  # add all files inside this path
+                # if data_args.jurisdiction == Jurisdiction.BOTH:
+                    # train_files.extend(glob.glob(f"{path / Jurisdiction.INDIA.value}/*.csv"))  # add the indian data
             # load files separately so we can remove unused features before merging into one
             for train_file in train_files:
                 train_datasets.append(load_dataset("csv", data_files={"train": train_file})['train'])
@@ -242,9 +246,13 @@ def main():
         remove_original_cols = 'en' in model_args.train_languages \
                                or data_args.jurisdiction in [Jurisdiction.INDIA, Jurisdiction.BOTH]
         # we need to remove some columns, so we can merge
+
         train_datasets = remove_unused_features(train_datasets, remove_original_cols)
+
         train_dataset = concatenate_datasets(train_datasets)  # we want to train on all datasets at the same time
+
         train_dataset = filter_by_sub_datasets(train_dataset)
+
 
         # Using the Indian cases only in the Swiss train set period (not older ones).
         # train_dataset = train_dataset.filter(lambda item: int(item['year']) >= 2000)
@@ -252,7 +260,7 @@ def main():
 
     if training_args.do_eval:
         for lang in model_args.train_languages:
-            eval_path = (DATA_DIR / lang / 'val.csv').as_posix()
+            eval_path = (DATA_DIR / 'gpt3mix/AR_OG/de_<600' / 'validation.csv').as_posix()    # eval_path = (DATA_DIR / lang / 'val.csv').as_posix()
             eval_dataset = load_dataset("csv", data_files={"validation": eval_path})['validation']
             eval_datasets.append(eval_dataset)
         # if we train with the Indian dataset
@@ -265,7 +273,7 @@ def main():
     predict_datasets, sub_datasets = {}, {}
     for lang in model_args.test_languages:
         if training_args.do_predict:
-            predict_path = (DATA_DIR / lang / 'test.csv').as_posix()
+            predict_path = (DATA_DIR / 'gpt3mix/AR_OG/de_<600' / 'test_concat.csv').as_posix()    # predict_path = (DATA_DIR / lang / 'test.csv').as_posix()
             predict_dataset = load_dataset("csv", data_files={"test": predict_path})['test']
             predict_datasets[lang] = predict_dataset
 
@@ -274,7 +282,7 @@ def main():
             lang_sub_dataset_dir = DATA_DIR / lang / 'sub_datasets'
             if lang_sub_dataset_dir.exists():  # for example in the indian dataset we don't have this
                 sub_datasets_to_run = ['input_length', 'legal_area', 'year', 'origin_canton', 'origin_region']
-                for file in glob.glob(f'{lang_sub_dataset_dir}/*/*.csv'):
+                for file in glob.glob(lang_sub_dataset_dir+'/*/*.csv'):
                     experiment = Path(file).parent.stem
                     if experiment in sub_datasets_to_run:  # exclude very large ones like origin_court and origin_chamber
                         part = Path(file).stem.split("-")[1]
@@ -284,7 +292,7 @@ def main():
                 sub_datasets[lang] = lang_sub_datasets
 
     # Labels: just take the labels from the first language. We assume that they are identical anyway.
-    with open(DATA_DIR / model_args.train_languages[0] / 'labels.json', 'r') as f:
+    with open(DATA_DIR / 'gpt3mix/AR_OG/de_<600' / 'labels.json', 'r') as f:
         label_dict = json.load(f)
         label_dict['id2label'] = {int(k): v for k, v in label_dict['id2label'].items()}
         label_dict['label2id'] = {k: int(v) for k, v in label_dict['label2id'].items()}
@@ -324,8 +332,8 @@ def main():
 
     def save_model(model, folder):
         # save entire model ourselves just to be safe
-        torch.save(model.state_dict(), f'{folder}/model.bin')
-        logger.info(f"Model state dict saved to {folder}/model.bin")
+        torch.save(model.state_dict(), folder+"/model.bin")
+        # logger.info(f"Model state dict saved to {folder}/model.bin")
 
         # save adapters
         if model_args.train_type == TrainType.ADAPTERS:
@@ -333,10 +341,10 @@ def main():
 
     def load_model(model, folder):
         # load entire model ourselves just to be safe
-        model_path = Path(f'{folder}/model.bin')
+        model_path = Path(folder+'/model.bin')
         if model_path.exists():
             model.load_state_dict(torch.load(model_path, map_location=training_args.device))
-            logger.info(f"Model state dict loaded from {model_path}")
+            # logger.info(f"Model state dict loaded from {model_path}")
             model.to(training_args.device)
 
             # load adapters
@@ -472,8 +480,11 @@ def main():
     def preprocess_function(batch):
         pad_id = tokenizer.pad_token_id
         if model_args.long_input_bert_type == LongInputBertType.HIERARCHICAL:
+            print("check34: model_args.long_input_bert_type", model_args.long_input_bert_type)
             batch['segments'] = []
-            if data_args.segmentation_type == SegmentationType.BLOCK:
+            print("segmentation_type", data_args.segmentation_type, SegmentationType.BLOCK)
+            print("data.args.segmentation_type == SegmentationType.BLOCK", data_args.segmentation_type == SegmentationType.BLOCK)
+            if data_args.segmentation_type == SegmentationType.BLOCK.value:
                 tokenized = tokenizer(batch["text"], padding=padding, truncation=True,
                                       max_length=data_args.max_segments * data_args.max_seg_len,
                                       add_special_tokens=False)  # prevent it from adding the cls and sep tokens twice
@@ -491,6 +502,7 @@ def main():
                 #  https://aclanthology.org/W19-2204.pdf, https://www.scitepress.org/Papers/2021/102463/102463.pdf
                 # For the moment just do it so we can test the new bert variant
                 sents_list = []
+
                 if len(model_args.train_languages) == 1:
                     nlp = sentencizers[model_args.train_languages[0]]
                     for doc in nlp.pipe(batch['text'], batch_size=len(batch['text'])):
@@ -502,6 +514,8 @@ def main():
                 for sents in sents_list:
                     sentences = combine_small_sentences(sents, data_args.min_seg_len)
                     batch['segments'].append(sentences)
+            else:
+                raise ValueError(f"Segmentation type {data_args.segmentation_type} not supported.")
 
             # Tokenize the texts
             tokenized = {'input_ids': [], 'attention_mask': [], 'token_type_ids': []}
@@ -514,15 +528,22 @@ def main():
             del batch['segments']
         else:
             # Tokenize the texts
+            print("check234")
             tokenized = tokenizer(batch["text"], padding=padding, truncation=True,
                                   max_length=data_args.max_seq_len, return_token_type_ids=True)
+        print("padding, data_args.max_seq_len", padding, data_args.max_seq_len)
+        print("megacheck", data_args.problem_type)
 
         # Map labels to IDs
         if data_args.problem_type == ProblemType.MULTI_LABEL_CLASSIFICATION:
             tokenized["label"] = [mlb.transform([eval(labels)])[0] for labels in batch["label"]]
-        if data_args.problem_type == ProblemType.SINGLE_LABEL_CLASSIFICATION:
+        if data_args.problem_type == ProblemType.SINGLE_LABEL_CLASSIFICATION.value:
+            print("chek22", batch)
+            print("chek22", label_dict)
             if label_dict["label2id"] is not None and "label" in batch:
+                print("chek23")
                 tokenized["label"] = [label_dict["label2id"][l] for l in batch["label"]]
+        print("batch3")
         return tokenized
 
     def append_zero_segments(case_encodings, pad_token_id):
@@ -539,12 +560,18 @@ def main():
         )
 
     if training_args.do_train:
+        print("train dataset 0", train_dataset)
+
         if data_args.max_train_samples is not None:
             train_dataset = train_dataset.select(range(data_args.max_train_samples))
+        print("train dataset 1", train_dataset)
+        train_dataset_old = train_dataset
         train_dataset = preprocess_dataset(train_dataset)
+        print("train dataset 2", train_dataset)
+
         # Log a random sample from the training set:
         for index in random.sample(range(len(train_dataset)), 1):
-            logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
+            # logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
             # make sure the tokenizer didn't do anything stupid
             if model_args.long_input_bert_type == LongInputBertType.HIERARCHICAL:
                 assert len(train_dataset[index]['input_ids'][0]) == data_args.max_seg_len
@@ -580,7 +607,7 @@ def main():
         if data_args.problem_type == ProblemType.MULTI_LABEL_CLASSIFICATION:
             # for multi_label_classification we need boolean arrays for each example
             preds, labels = preds_to_bools(preds), labels_to_bools(labels)
-        if data_args.problem_type == ProblemType.SINGLE_LABEL_CLASSIFICATION:
+        if data_args.problem_type == ProblemType.SINGLE_LABEL_CLASSIFICATION.value:
             preds = np.argmax(preds, axis=1)
         return preds, labels, probs
 
@@ -619,6 +646,7 @@ def main():
     trainer_class = AdapterTrainer if adapter_args.train_adapter else Trainer
     trainer_class = Trainer
     if training_args.do_train and model_args.label_imbalance_method == LabelImbalanceMethod.CLASS_WEIGHTS:
+        print("train dataset 2". train_dataset)
         lbls = [item['label'] for item in train_dataset]
         # compute class weights based on label distribution
         class_weight = compute_class_weight('balanced', classes=np.unique(lbls), y=lbls)
@@ -644,6 +672,7 @@ def main():
         label_datasets = dict()
         minority_len, majority_len = len(train_dataset), 0
         for label_id in label_dict['id2label'].keys():
+            print("train_dataset", train_dataset, label_id)
             label_datasets[label_id] = train_dataset.filter(lambda item: item['label'] == label_id,
                                                             load_from_cache_file=not data_args.overwrite_cache)
             if len(label_datasets[label_id]) < minority_len:
@@ -737,7 +766,7 @@ def main():
     def pred2label(pred):
         if data_args.problem_type == ProblemType.MULTI_LABEL_CLASSIFICATION:
             return mlb.inverse_transform(np.array([pred]))[0]
-        if data_args.problem_type == ProblemType.SINGLE_LABEL_CLASSIFICATION:
+        if data_args.problem_type == ProblemType.SINGLE_LABEL_CLASSIFICATION.value:
             return label_dict["id2label"][pred]
 
     def write_reports(base_dir, ids, preds, labels, probs, wandb_prefix, split):
@@ -782,7 +811,7 @@ def main():
                 if data_args.problem_type == ProblemType.MULTI_LABEL_CLASSIFICATION:
                     title = "Multilabel Confusion Matrix"
                     matrices = multilabel_confusion_matrix(labels, preds)
-                if data_args.problem_type == ProblemType.SINGLE_LABEL_CLASSIFICATION:
+                if data_args.problem_type == ProblemType.SINGLE_LABEL_CLASSIFICATION.value:
                     title = "Singlelabel Confusion Matrix"
                     matrices = [confusion_matrix(labels, preds)]
                 content = "reading help:\nTN FP\nFN TP\n\n"
@@ -830,7 +859,7 @@ def main():
         if data_args.log_all_predictions:
             # This can be used to get detailed insight into specific predictions
             preds, labels, probs, metrics = predict(train_dataset)
-            write_reports(training_args.output_dir, train_dataset["id"], preds, labels, probs, "train", "train")
+            # write_reports(training_args.output_dir, train_dataset["id"], preds, labels, probs, "train", "train")
 
     # load model ourselves because save_pretrained/load_pretrained might not work well for our hacked models
     # load_model(trainer.model, training_args.output_dir)
@@ -850,7 +879,7 @@ def main():
         if data_args.log_all_predictions:
             # This can be used to get detailed insight into specific predictions
             preds, labels, probs, metrics = predict(eval_dataset)
-            write_reports(training_args.output_dir, eval_dataset["id"], preds, labels, probs, "eval", "eval")
+            # write_reports(training_args.output_dir, eval_dataset["id"], preds, labels, probs, "eval", "eval")
 
     base_output_dir = Path(training_args.output_dir)  # save it here because we overwrite it
     if training_args.do_predict and not data_args.tune_hyperparams:
@@ -878,7 +907,7 @@ def main():
                 # if "mem" not in k and k != "test_samples"}
                 wandb.log(metrics)  # log test metrics to wandb
 
-            write_reports(training_args.output_dir, predict_dataset["id"], preds, labels, probs, prefix, "test")
+            # write_reports(training_args.output_dir, predict_dataset["id"], preds, labels, probs, prefix, "test")
 
     if data_args.test_on_sub_datasets:
         logger.info("*** Sub-Datasets ***")
